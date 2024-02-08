@@ -1,0 +1,560 @@
+
+-- Information block for the plugin
+PluginInfo = {
+	Name = "Audio Source Selector",
+	Version = "1.0",
+	BuildVersion = "1.0.0.0",
+	Id = "2079d20b-b9b7-423a-9329-637cff9540bb",
+	Author = "Jonathan Dean (ke4ukz@gmx.com)",
+	Description = "Audio Source Selector",
+	Manufacturer = "None",
+	Model = "Various"
+}
+
+-- Verbosity levels for debugging
+DebugLevels =  {
+	"None",
+	"Function Calls",
+	"All"
+}
+
+DebugLevelNone = DebugLevels[1]				-- Does not print any debug data
+DebugLevelFunctionCalls = DebugLevels[2]	-- Prints function call notifications
+DebugLevelAll = DebugLevels[3]				-- Prints both function call notifications and TX/RX data
+
+PageNames = { "Labels", "Selectors", "Knobs", "Buttons" }		-- List the pages within the plugin
+
+-- Conditionally print to debug output depending on debug verbosity
+function DBG(str, lvl)
+	if Properties["Debug Print"].Value == DebugLevelAll or Properties["Debug Print"].Value == lvl then
+		print(str)
+	end
+end
+
+-- Print the name of a function when it is called
+function FUNCCALL(fname)
+	DBG("Function called: " .. fname, DebugLevelFunctionCalls)
+end
+
+-- Define the color of the plugin object in the design
+function GetColor(props)
+	return { 0, 139, 139 }
+end
+
+-- The name that will initially display when dragged into a design
+function GetPrettyName(props)
+	return PluginInfo.Name
+end
+
+-- Returns an ordered table of the page names
+function GetPages(props)
+	local pages = {}
+	for ix,name in ipairs(PageNames) do
+		table.insert(pages, {name = PageNames[ix]})
+	end
+	return pages
+end
+
+-- Define User configurable Properties of the plugin
+function GetProperties()
+	local props = {}
+	-- Add debug verbosity property
+	table.insert(props, {
+		Name = "Debug Print",
+		Type = "enum",
+		Choices = DebugLevels,
+		Value = DebugLevelNone
+	})
+	table.insert(props, {
+		Name = "Inputs",
+		Type = "enum",
+		Choices = {"8", "16", "32", "64"},
+		Value = "8"
+	})
+	table.insert(props, {
+		Name = "Outputs",
+		Type = "enum",
+		Choices = {"8", "16", "32", "64"},
+		Value = "8"
+	})
+	table.insert(props, {
+		Name = "Numeric Routing",
+		Type = "enum",
+		Choices = {"Route on input change", "Route on output change", "Route on either input or output change", "Route on trigger only"},
+		Value = "Route on input change"
+	})
+	return props
+end
+
+-- Optional function to define pins on the plugin that are not connected to a Control
+function GetPins(props)
+	local pins = {
+	}
+	for i=1,tonumber(props["Inputs"].Value) do
+		table.insert(pins, {
+			Name = "Input " .. tostring(i),
+			Direction = "input",
+			Domain = "audio"
+		})
+	end
+	for i=1,tonumber(props["Outputs"].Value) do
+		table.insert(pins, {
+			Name = "Output " .. tostring(i),
+			Direction = "output",
+			Domain = "audio"
+		})
+	end
+	return pins
+end
+
+-- Function to update available properties when properties are altered by the user
+function RectifyProperties(props)
+	if props.plugin_show_debug.Value == false then
+		-- Don't show debug verbosity if debugging is disabled
+		props["Debug Print"].IsHidden = true
+		props["Debug Print"].Value = DebugLevelNone
+	else
+		-- Show debug verbosity when debugging is enabled
+		props["Debug Print"].IsHidden = false
+		props["Debug Print"].Value = DebugLevelAll
+	end
+	return props
+end
+
+-- Define components used within the plugin
+function GetComponents(props)
+	local components = {
+		{
+			Name = "MainRouter",
+			Type = "router_with_output",
+			Properties = {
+				["n_inputs"] = tonumber(props["Inputs"].Value),
+				["n_outputs"] = tonumber(props["Outputs"].Value),
+			}
+		}
+	}
+	return components
+end
+
+-- Define wiring of components used within the plugin
+function GetWiring(props)
+	local wiring = {}
+	for i=1,tonumber(props["Inputs"].Value) do
+		table.insert(wiring, {
+			"Input " .. tostring(i),
+			"MainRouter Input " .. tostring(i)
+		})
+	end
+	for i=1,tonumber(props["Outputs"].Value) do
+		table.insert(wiring, {
+			"Output " .. tostring(i),
+			"MainRouter Output " .. tostring(i)
+		})
+	end
+	return wiring
+end
+
+-- Defines the Controls used within the plugin
+function GetControls(props)
+	local ctrls = {}
+	local NumInputs = tonumber(props["Inputs"].Value)
+	local NumOutputs = tonumber(props["Outputs"].Value)
+	table.insert(ctrls, {
+		Name = "OutputSource",
+		ControlType = "Text",
+		DefaultValue = "",
+		PinStyle = "Input",
+		UserPin = true,
+		Count = NumOutputs
+	})
+	table.insert(ctrls, {
+		Name = "LabelsJSON",
+		ControlType = "Text",
+		DefaultValue = "[]",
+		PinStyle = "Input",
+		UserPin = true,
+		Count = 1
+	})
+	table.insert(ctrls, {
+		Name = "OutputSelect",
+		ControlType = "Knob",
+		ControlUnit = "Integer",
+		Min = 1,
+		Max = NumOutputs,
+		DefaultValue = 1,
+		PinStyle = "Input",
+		UserPin = true,
+		Count = 1
+	})
+	table.insert(ctrls, {
+		Name = "InputSelect",
+		ControlType = "Knob",
+		ControlUnit = "Integer",
+		Min = 1,
+		Max = NumInputs,
+		DefaultValue = 1,
+		PinStyle = "Input",
+		UserPin = true,
+		Count = 1
+	})
+	table.insert(ctrls, {
+		Name = "ExecuteRoute",
+		ControLType = "Button",
+		ButtonType = "Trigger",
+		PinStyle = "Input",
+		UserPin = true,
+		Count = 1
+	})
+	table.insert(ctrls, {
+		Name = "InputLabel",
+		ControlType = "Text",
+		PinStyle = "Both",
+		UserPin = true,
+		Count = NumInputs
+	})
+	for i=1,tonumber(props["Outputs"].Value) do
+		table.insert(ctrls, {
+			Name = "Output_" .. tostring(i) .. "_Input",
+			ControlType = "Button",
+			ButtonType = "Toggle",
+			PinStyle = "Input",
+			UserPin = true,
+			Count = tonumber(props["Inputs"].Value)
+		})
+	end
+	return ctrls
+end
+
+function GetControlLayout(props)
+	local layout = {}
+	local graphics = {}
+	local CurrentPage = PageNames[props["page_index"].Value]
+
+	local fieldHeight = 16
+	local xOffset = 4
+	local gapSize = 4
+	local fieldWidth = 140
+	local curRow = 0
+	local NumInputs = tonumber(props["Inputs"].Value)
+	local NumOutputs = tonumber(props["Outputs"].Value)
+
+	if CurrentPage == "Labels" then
+		-- Input Labels Header
+		table.insert(graphics, {
+			Type = "Header",
+			Text = "Input Labels",
+			Position = {xOffset, (fieldHeight + gapSize) * curRow},
+			Size = {fieldWidth * 2 + gapSize, fieldHeight}
+		})
+
+		-- Add input label row for each input
+		for curRow = 1,NumInputs do
+			table.insert(graphics, {
+				Type = "Text",
+				Text = "Input " .. tostring(curRow) .. " Label",
+				Position = { xOffset, (fieldHeight + gapSize) * curRow},
+				Size = { fieldWidth, fieldHeight },
+				FontSize = 14,
+				HTextAlign = "Right"
+			})
+			layout["InputLabel " .. tostring(curRow)] = {
+				PrettyName = "Lables~Input " .. tostring(curRow) .. " Label",
+				Style="Text",
+				Position = {xOffset + gapSize + fieldWidth, (fieldHeight + gapSize) * curRow},
+				Size = {fieldWidth, fieldHeight}
+			}
+		end
+
+
+	elseif CurrentPage == "Selectors" then
+		-- Selectors Header
+		table.insert(graphics, {
+			Type = "Header",
+			Text = "Source Selectors",
+			Position = {xOffset, (fieldHeight + gapSize) * curRow},
+			Size = {fieldWidth * 2 + gapSize, fieldHeight}
+		})
+
+		-- Add source select for each output
+		for curRow = 1,NumOutputs do
+			table.insert(graphics, {
+				Type = "Text",
+				Text = "Output " .. tostring(curRow) .. " Source",
+				Position = { xOffset, (fieldHeight + gapSize) * curRow},
+				Size = { fieldWidth, fieldHeight },
+				FontSize = 14,
+				HTextAlign = "Right"
+			})
+			layout["OutputSource " .. tostring(curRow)] = {
+				PrettyName = "Selectors~Output " .. tostring(curRow) .. " Source",
+				Style="ComboBox",
+				Position = {xOffset + gapSize + fieldWidth, (fieldHeight + gapSize) * curRow},
+				Size = {fieldWidth, fieldHeight}
+			}
+		end
+	elseif CurrentPage == "Knobs" then
+		-- Header
+		table.insert(graphics, {
+			Type = "Header",
+			Text = "Input/Output Routing",
+			Position = {xOffset, (fieldHeight + gapSize) * curRow},
+			Size = {fieldWidth * 2 + gapSize, fieldHeight}
+		})
+		curRow = curRow + 1
+
+		-- Add output select knob
+		table.insert(graphics, {
+			Type = "Text",
+			Text = "Output Select",
+			Position = { xOffset, (fieldHeight + gapSize) * curRow},
+			Size = { fieldWidth, fieldHeight },
+			FontSize = 14,
+			HTextAlign = "Right"
+		})
+		layout["OutputSelect"] = {
+			PrettyName = "Knobs~Output Select",
+			Style="Knob",
+			Position = {xOffset + gapSize + fieldWidth, (fieldHeight + gapSize) * curRow},
+			Size = {fieldHeight * 3, fieldHeight * 3}
+		}
+		curRow = curRow + 3
+
+		-- Add input select knob
+		table.insert(graphics, {
+			Type = "Text",
+			Text = "Input Select",
+			Position = { xOffset, (fieldHeight + gapSize) * curRow},
+			Size = { fieldWidth, fieldHeight },
+			FontSize = 14,
+			HTextAlign = "Right"
+		})
+		layout["InputSelect"] = {
+			PrettyName = "Knobs~Input Select",
+			Style="Knob",
+			Position = {xOffset + gapSize + fieldWidth, (fieldHeight + gapSize) * curRow},
+			Size = {fieldHeight * 3, fieldHeight * 3}
+		}
+		curRow = curRow + 3
+
+		-- Add the route execute button
+		table.insert(graphics, {
+			Type = "Text",
+			Text = "Execute Route",
+			Position = { xOffset, (fieldHeight + gapSize) * curRow},
+			Size = { fieldWidth, fieldHeight },
+			FontSize = 14,
+			HTextAlign = "Right"
+		})
+		layout["ExecuteRoute"] = {
+			PrettyName = "Knobs~Execute Route",
+			Style = "Button",
+			ButtonStyle = "Trigger",
+			Position = {xOffset + gapSize + fieldWidth, (fieldHeight + gapSize) * curRow},
+			Size = {fieldHeight * 3, fieldHeight}
+		}
+		curRow = curRow + 1
+	elseif CurrentPage == "Buttons" then
+		local buttonWidth = 36
+		local buttonHeight = 16
+		local buttonGap = 2
+
+
+		-- Inputs header
+		table.insert(graphics, {
+			Type = "Header",
+			Text = "Input/Output Routing",
+			Position = {0, 0},
+			Size = {(buttonWidth + buttonGap) * (NumOutputs+1), buttonHeight}
+		})
+
+		-- First do output labels
+		for i=1,NumOutputs do
+			table.insert(graphics, {
+				Type = "Text",
+				Text = string.format("Out %d", i),
+				Position = { (i) * (buttonWidth + buttonGap), buttonHeight + buttonGap},
+				Size = { buttonWidth, buttonHeight },
+				FontSize = 10,
+				HTextAlign = "Center"
+			})
+		end
+
+		-- Then do input labels
+		for i=1,NumInputs do
+			table.insert(graphics, {
+				Type = "Text",
+				Text = string.format("In %d", i),
+				Position = { 1, (buttonHeight + buttonGap) * (i + 1)},
+				Size = { buttonWidth, buttonHeight },
+				FontSize = 10,
+				HTextAlign = "Center"
+			})
+		end
+		
+		-- Then do buttons
+		for inidx = 1,NumInputs do
+			for outidx = 1,NumInputs do
+				layout["Output_" .. tostring(outidx) .. "_Input "..  tostring(inidx)] = {
+					PrettyName = "Buttons~Output " .. tostring(outidx) .. "~Input "..  tostring(inidx),
+					Style = "Button",
+					ButtonStyle = "Toggle",
+					Position = {outidx * (buttonWidth + buttonGap), (1+inidx) * (buttonHeight + buttonGap)},
+					Size = {buttonWidth, buttonHeight}
+				}
+			end
+		end
+	end
+	return layout, graphics
+end
+
+--Start event based logic
+if Controls then
+
+	rapidjson = require("rapidjson")
+
+	NumInputs = tonumber(Properties["Inputs"].Value)
+	NumOutputs = tonumber(Properties["Outputs"].Value)
+
+	-- Currently selected routing mode, i for route on input, o for route on either, t for route on trigger, e for route on either input or output
+	curRoutingMode = Properties["Numeric Routing"].Value:sub(10,10)
+
+	sources = {}
+
+	function RefreshLabels()
+		FUNCCALL("RefreshLabels")
+		local tmpsources = {}
+
+		-- Build the input labels names list
+		for i=1,tonumber(Properties["Inputs"].Value) do
+			if (#Controls["InputLabel"][i].String == 0) then
+				Controls["InputLabel"][i].String = "Input " .. tostring(i)
+			end
+			table.insert(tmpsources, Controls["InputLabel"][i].String)
+		end
+
+
+		-- Fill each output dropdown with the list of sources
+		for i=1,tonumber(Properties["Outputs"].Value) do
+			Controls["OutputSource"][i].Choices = tmpsources
+		end
+
+		-- Now go through each output and find its selected input so we can populate the text fields with their correct values
+		for i=1,tonumber(Properties["Outputs"].Value) do
+			Controls["OutputSource"][i].String = tmpsources[MainRouter[string.format("select.%d", i)].Value]
+		end
+
+		sources = tmpsources
+
+	end
+
+	function OutputSourceChanged(idx, newval)
+		FUNCCALL("OutputSourceChanged")
+		--DBG(string.format("idx = %d, newval = %s", idx, newval), DebugLevelAll)
+		for i=1,tonumber(Properties["Inputs"].Value) do
+			if sources[i] == newval then
+				DBG(string.format("Selector routing: setting Output %d to use Input %d", idx, i), DebugLevelAll)
+				MainRouter[string.format("select.%d", idx)].Value = i
+				break
+			end
+		end
+	end
+
+	function DoKnobRouting()
+		FUNCCALL("DoKnobRouting")
+		local inidx = Controls["InputSelect"].Value
+		local outidx = Controls["OutputSelect"].Value
+		DBG(string.format("Knob routing: output %d coming from %d", outidx, inidx), DebugLevelAll)
+		MainRouter[string.format("select.%d", outidx)].Value = inidx
+	end
+
+	function DoButtonRouting(inidx, outidx)
+		FUNCCALL("DoButtonRouting")
+		DBG(string.format("Button routing: setting Output %d to use Input %d", outidx, inidx))
+		MainRouter[string.format("select.%d", outidx)].Value = inidx
+	end
+
+	function UpdateSelectorFeedback(inidx, outidx)
+		FUNCCALL("UpdateSelectorFeedback")
+		-- Set the selector dropdown to the label for its selected input
+		Controls["OutputSource"][outidx].String = sources[inidx]
+	end
+
+	function UpdateButtonFeedback(inidx, outidx, bool)
+		FUNCCALL("UpdateButtonFeedback")
+		-- Set the routing button value
+		Controls["Output_" .. tostring(outidx) .. "_Input"][inidx].Boolean = bool
+	end
+
+	-- Add event handlers
+	for i=1,NumInputs do
+		Controls["InputLabel"][i].EventHandler = RefreshLabels
+	end
+	for i=1,NumOutputs do
+		Controls["OutputSource"][i].EventHandler = function(ctl) OutputSourceChanged(i, ctl.String) end
+		MainRouter[string.format("select.%d", i)].EventHandler = function(ctl) UpdateSelectorFeedback(ctl.Value, i) end
+	end
+	for inidx=1,NumInputs do
+		for outidx=1,NumOutputs do
+			Controls["Output_" .. tostring(outidx) .. "_Input"][inidx].EventHandler = function(ctl)
+				if (ctl.Boolean) then
+					DoButtonRouting(inidx, outidx, ctl.Boolean)
+				else
+					ctl.Boolean = true
+				end
+			end
+
+			MainRouter[string.format("output.%d.input.%d.select", outidx, inidx)].EventHandler = function(ctl)
+				UpdateButtonFeedback(inidx, outidx, ctl.Boolean)
+			end
+		end
+	end
+
+	Controls["OutputSelect"].EventHandler = function(ctl)
+		-- only route on change if either or output is selected
+		if curRoutingMode == "e" or curRoutingMode == "o" then
+			DoKnobRouting()
+		end
+	end
+
+	Controls["InputSelect"].EventHandler = function(ctl)
+		-- only route on chagnge if either or input is selected
+		if curRoutingMode == "e" or curRoutingMode == "i" then
+			DoKnobRouting()
+		end
+	end
+
+	-- the trigger button always does something
+	Controls["ExecuteRoute"].EventHandler = DoKnobRouting
+
+
+	
+
+	-- This code enables monitoring the router select buttons for debugging the hidden router control
+--[[
+	function monitorrouting(out_idx, in_idx, val)
+		DBG(string.format("output.%d.input.%d.select = %s", out_idx, in_idx, val))
+	end
+	for oidx=1,tonumber(Properties["Outputs"].Value) do
+		for iidx=1,tonumber(Properties["Inputs"].Value) do
+			MainRouter[string.format("output.%d.input.%d.select", oidx, iidx)].EventHandler = function(ctl) monitorrouting(oidx, iidx, ctl.Boolean) end
+		end
+	end
+]]--
+
+	-- Set initial values
+	RefreshLabels()
+	for i=1,tonumber(Properties["Outputs"].Value) do
+		if Controls["OutputSource"][i].String == "" then
+			Controls["OutputSource"][i].String = sources[1]
+			OutputSourceChanged(i, sources[1])
+		end
+	end
+	-- for outidx=1,tonumber(Properties["Outputs"].Value) do
+
+	-- 	for inidx=1,tonumber(Properties["Inputs"].Value) do
+	-- 		Controls["Output_" .. tostring(outidx) .. "_Input"][inidx].Boolean = MainRouter[string.format("output.%d.input.%d.select", outidx, inidx)].Boolean
+	-- 	end
+	-- end
+
+
+end
